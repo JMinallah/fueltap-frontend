@@ -1,38 +1,45 @@
 "use client";
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { formatCount } from "@/components/admin/ui/format";
+import type { StatValue, TrendPoint } from "@/lib/server/admin/types";
+import TrendCard from "./TrendCard";
 
-interface Props {
-  data: { month: string; value: number }[];
-}
-
-export default function OrdersTrendChart({ data }: Props) {
+export default function OrdersTrendChart({
+  total,
+  data,
+}: {
+  total: StatValue;
+  data: TrendPoint[];
+}) {
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-xs border border-gray-100">
-      <h3 className="mb-4 text-sm font-semibold text-neutral-800">Orders Trend</h3>
-      {data.length === 0 ? (
-        <div className="flex h-40 items-center justify-center text-sm text-neutra-700">
-          No orders data yet
+    <TrendCard
+      title="Orders Trend"
+      value={formatCount(total.value)}
+      trend={total.trend}
+      isEmpty={data.length === 0}
+      emptyBackdrop={
+        <div className="flex size-full items-end gap-2">
+          {[2, 4, 10, 6, 3, 5, 9, 4, 6, 10, 5, 4, 2].map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 bg-[#EEF0FC]"
+              style={{ height: `${h * 5}%` }}
+            />
+          ))}
         </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Bar dataKey="value" fill="#4e71e8" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-    </div>
+      }
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+          <XAxis dataKey="label" hide />
+          <Tooltip
+            formatter={(value) => [formatCount(Number(value)), "Orders"]}
+            cursor={{ fill: "#EEF0FC" }}
+          />
+          <Bar dataKey="value" fill="#4E71E8" />
+        </BarChart>
+      </ResponsiveContainer>
+    </TrendCard>
   );
 }

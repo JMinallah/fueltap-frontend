@@ -1,31 +1,43 @@
 import { Metadata } from "next";
-import { getDashboardMetrics, getAdminSetupStatus } from "@/lib/server/admin-dashboard";
 import AdminDashboard from "@/components/admin/dashboard/AdminDashboard";
+import {
+  getCompany,
+  getDashboardMetrics,
+  getSetupStatus,
+} from "@/lib/server/admin/dashboard";
+import { getStations } from "@/lib/server/admin/stations";
 
 export const metadata: Metadata = {
   title: "Dashboard | FuelTap Admin",
 };
 
 export default async function AdminDashboardPage() {
-  const [metricsResult, setupResult] = await Promise.allSettled([
+  const [company, setup, metrics, stations] = await Promise.all([
+    getCompany(),
+    getSetupStatus(),
     getDashboardMetrics(),
-    getAdminSetupStatus(),
+    getStations(),
   ]);
-
-  const metrics =
-    metricsResult.status === "fulfilled" && metricsResult.value.success
-      ? metricsResult.value.data
-      : null;
-
-  const setup =
-    setupResult.status === "fulfilled" && setupResult.value.success
-      ? setupResult.value.data
-      : { kybSubmitted: false, hasManager: false, hasStation: false };
 
   return (
     <AdminDashboard
-      metrics={metrics ?? null}
-      setup={setup ?? { kybSubmitted: false, hasManager: false, hasStation: false }}
+      companyName={company.success ? company.data.name : "Your company"}
+      setup={
+        setup.success
+          ? setup.data
+          : {
+              kybSubmitted: false,
+              hasManager: false,
+              hasStation: false,
+              completionShown: false,
+            }
+      }
+      metrics={metrics.success ? metrics.data : null}
+      stations={
+        stations.success
+          ? stations.data.map((s) => ({ id: s.id, name: s.name }))
+          : []
+      }
     />
   );
 }

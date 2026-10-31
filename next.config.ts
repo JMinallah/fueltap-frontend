@@ -3,8 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      // One 5 MB file plus multipart metadata.
-      bodySizeLimit: "6mb",
+      // Super admin KYB uploads three files of up to 5 MB each in one request,
+      // plus multipart metadata.
+      bodySizeLimit: "16mb",
     },
   },
 };

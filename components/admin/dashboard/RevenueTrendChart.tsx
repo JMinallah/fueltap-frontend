@@ -1,45 +1,50 @@
 "use client";
 
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { formatNaira, formatNairaCompact } from "@/components/admin/ui/format";
+import type { StatValue, TrendPoint } from "@/lib/server/admin/types";
+import TrendCard from "./TrendCard";
 
-interface Props {
-  data: { month: string; value: number }[];
-}
-
-export default function RevenueTrendChart({ data }: Props) {
+export default function RevenueTrendChart({
+  total,
+  data,
+}: {
+  total: StatValue;
+  data: TrendPoint[];
+}) {
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-xs border border-gray-100">
-      <h3 className="mb-4 text-sm font-semibold text-neutral-800">Revenue Trend</h3>
-      {data.length === 0 ? (
-        <div className="flex h-40 items-center justify-center text-sm text-neutra-700">
-          No revenue data yet
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="#4e71e8"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      )}
-    </div>
+    <TrendCard
+      title="Revenue Trend"
+      value={formatNairaCompact(total.value)}
+      trend={total.trend}
+      isEmpty={data.length === 0}
+      emptyBackdrop={
+        <svg viewBox="0 0 560 190" preserveAspectRatio="none" className="size-full">
+          <path
+            d="M0 170 L50 160 L100 110 L200 125 L260 85 L360 85 L410 40 L560 0 L560 190 L0 190 Z"
+            fill="#F3F4F4"
+          />
+        </svg>
+      }
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+          <XAxis dataKey="label" hide />
+          <Tooltip
+            formatter={(value) => [formatNaira(Number(value)), "Revenue"]}
+            cursor={{ stroke: "#E0E1E2" }}
+          />
+          <Area
+            type="linear"
+            dataKey="value"
+            stroke="#0EA774"
+            strokeWidth={2}
+            fill="#E7F8F2"
+            fillOpacity={1}
+            activeDot={{ r: 4 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </TrendCard>
   );
 }

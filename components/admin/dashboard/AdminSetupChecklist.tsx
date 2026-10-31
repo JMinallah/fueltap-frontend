@@ -1,152 +1,149 @@
-"use client";
-
+import { cn } from "@/lib/utils";
+import {
+  ArrowUpRight,
+  BriefcaseBusiness,
+  Building2,
+  Check,
+  Mail,
+  ShieldUser,
+} from "lucide-react";
 import Link from "next/link";
-import { Check } from "@/components/animate-ui/icons/check";
-import { AnimateIcon } from "@/components/animate-ui/icons/icon";
-import { ArrowUpRight, Building2, LockKeyhole, Users, Zap } from "lucide-react";
+import type { SetupStatus } from "@/lib/server/admin/types";
 
-interface Props {
-  kybSubmitted: boolean;
-  hasManager: boolean;
-  hasStation: boolean;
-  companyId?: string;
-}
-
-interface Step {
-  type: string;
-  header: string;
-  subText: string;
-  isCompleted: boolean;
-  lockedReason?: string;
+type Step = {
+  key: string;
+  title: string;
+  text: string;
+  done: boolean;
   icon: React.ReactNode;
-  actionLink: string;
-  actionText: string;
-}
+  action?: { label: string; href: string };
+};
 
-export default function AdminSetupChecklist({
-  kybSubmitted,
-  hasManager,
-  hasStation,
-  companyId,
-}: Props) {
+// Steps unlock in order: each action is disabled until the step before it is done.
+export default function AdminSetupChecklist({ setup }: { setup: SetupStatus }) {
   const steps: Step[] = [
     {
-      type: "account",
-      header: "Create Account",
-      subText: "Your account has been created successfully.",
-      isCompleted: true,
-      icon: <Building2 className="text-primary" size={20} />,
-      actionLink: "#",
-      actionText: "Done",
+      key: "account",
+      title: "Create Account",
+      text: "Your account has been created",
+      done: true,
+      icon: <Mail />,
     },
     {
-      type: "kyb",
-      header: "Verify Your Business Identity (KYB)",
-      subText: companyId
-        ? `Company ID: ${companyId}`
-        : "Submit your corporate documents for verification.",
-      isCompleted: kybSubmitted,
-      icon: <Building2 className="text-green-500" size={20} />,
-      actionLink: "/admin/kyb",
-      actionText: "Verify Business",
+      key: "kyb",
+      title: "Verify Your Business Identity (KYB)",
+      text: "Enter your registration and tax details to verify your business.",
+      done: setup.kybSubmitted,
+      icon: <BriefcaseBusiness />,
+      action: { label: "Complete KYB", href: "/admin/kyb" },
     },
     {
-      type: "manager",
-      header: "Invite Your First Manager",
-      subText: "Add a manager to run your first station.",
-      isCompleted: hasManager,
-      lockedReason: !kybSubmitted ? "Complete KYB first." : undefined,
-      icon: <Users className="text-green-500" size={20} />,
-      actionLink: "/admin/managers/invite",
-      actionText: "Invite Manager",
+      key: "manager",
+      title: "Invite Your First Manager",
+      text: "Fill in your manager's details and send them an invitation.",
+      done: setup.hasManager,
+      icon: <ShieldUser />,
+      action: { label: "Create Invite", href: "/admin/managers/invite" },
     },
     {
-      type: "station",
-      header: "Create First Station",
-      subText: "Add a fuel station to start receiving orders.",
-      isCompleted: hasStation,
-      lockedReason: !kybSubmitted
-        ? "Complete KYB first."
-        : !hasManager
-          ? "Invite a manager first."
-          : undefined,
-      icon: <Zap className="text-green-500" size={20} />,
-      actionLink: "/admin/stations/new",
-      actionText: "Create Station",
+      key: "station",
+      title: "Create First Station",
+      text: "Set up a station and appoint a manager to oversee its operations.",
+      done: setup.hasStation,
+      icon: <Building2 />,
+      action: { label: "Create First Station", href: "/admin/stations/new" },
     },
   ];
 
-  const completedCount = steps.filter((s) => s.isCompleted).length;
-  const progressPercent = Math.round((completedCount / steps.length) * 100);
+  const completed = steps.filter((s) => s.done).length;
+  const firstOpen = steps.findIndex((s) => !s.done);
 
   return (
-    <section className="max-w-2xl">
-      <div className="mb-5 rounded-2xl bg-white p-4 shadow-xs border border-gray-100">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-neutra-1000">
-            Setup Progress
-          </span>
-          <span className="text-sm font-semibold text-primary">
-            {completedCount}/{steps.length} Complete
-          </span>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+    <section className="mt-10 max-w-158" aria-labelledby="setup-title">
+      <h2 id="setup-title" className="text-xl font-medium text-black">
+        Complete your account setup
+      </h2>
+      <p className="text-grey-800 mt-2 text-base">
+        Finish these steps to activate your supplier account
+      </p>
+
+      <div className="mt-4 flex items-center gap-3">
+        <div
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={steps.length}
+          aria-valuenow={completed}
+          aria-label="Setup progress"
+          className="h-2 flex-1 overflow-hidden rounded-full bg-yellow-100"
+        >
           <div
-            className="h-full rounded-full bg-primary transition-all duration-500"
-            style={{ width: `${progressPercent}%` }}
+            className="h-full bg-[#FFC300] transition-[width] duration-500"
+            style={{ width: `${(completed / steps.length) * 100}%` }}
           />
         </div>
+        <p className="text-grey-800 shrink-0 text-base">
+          <span className="font-medium text-black">
+            {completed}/{steps.length}
+          </span>{" "}
+          Completed
+        </p>
       </div>
 
-      {steps.map((step) => {
-        const isLocked = !step.isCompleted && Boolean(step.lockedReason);
-        return (
-          <div
-            key={step.type}
-            className={`rounded-2xl mb-4 border-2 p-4 flex items-center justify-between transition-colors ${
-              step.isCompleted
-                ? "bg-neutral-400 border-neutral-400/20"
-                : "bg-green-50 border-green-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <span className="bg-white p-2.5 rounded-xl shadow-xs flex items-center justify-center">
+      <ol className="mt-6 flex flex-col gap-4">
+        {steps.map((step, index) => {
+          const enabled = index === firstOpen;
+          return (
+            <li
+              key={step.key}
+              className={cn(
+                "flex items-center gap-4 rounded-2xl border p-5",
+                step.done
+                  ? "border-gray-100 bg-white/70"
+                  : "border-transparent bg-green-50",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-white text-green-500 [&_svg]:size-6"
+              >
                 {step.icon}
               </span>
-              <div className={step.isCompleted ? "line-through opacity-70" : ""}>
-                <h4 className="font-semibold text-base lg:text-lg mb-1 text-neutral-900">
-                  {step.header}
-                </h4>
-                <p className="text-xs text-neutral-600">{step.subText}</p>
+              <div
+                className={cn(
+                  "min-w-0 flex-1",
+                  step.done && "text-grey-800 line-through",
+                )}
+              >
+                <h3 className="text-xl font-medium text-black">{step.title}</h3>
+                <p className="text-grey-800 mt-1 text-base leading-snug">
+                  {step.text}
+                </p>
               </div>
-            </div>
-
-            {step.isCompleted ? (
-              <AnimateIcon animateOnView>
-                <Check className="bg-green-500 text-white size-10 rounded-full p-2" />
-              </AnimateIcon>
-            ) : isLocked ? (
-              <button
-                type="button"
-                disabled
-                title={step.lockedReason}
-                className="p-4 bg-neutral-200 border border-neutral-300 max-w-[158px] rounded-full justify-center md:rounded-[999px] flex gap-2 text-sm text-neutral-500 items-center cursor-not-allowed"
-              >
-                <span className="hidden lg:inline">{step.actionText}</span>
-                <LockKeyhole className="md:hidden size-4" aria-hidden="true" />
-              </button>
-            ) : (
-              <Link
-                href={step.actionLink}
-                className="p-4 bg-white border max-w-[158px] rounded-full justify-center md:rounded-[999px] flex gap-2 text-sm border-[#DCDDDD] text-black items-center shadow-xs hover:bg-neutral-50 transition-all"
-              >
-                <span className="hidden lg:inline">{step.actionText}</span>
-                <ArrowUpRight className="size-4" />
-              </Link>
-            )}
-          </div>
-        );
-      })}
+              {step.done ? (
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-green-500 text-white">
+                  <Check size={20} aria-label="Completed" />
+                </span>
+              ) : step.action && enabled ? (
+                <Link
+                  href={step.action.href}
+                  className="flex h-12 shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-sm font-medium whitespace-nowrap text-black hover:bg-gray-100"
+                >
+                  {step.action.label}
+                  <ArrowUpRight size={16} aria-hidden="true" />
+                </Link>
+              ) : step.action ? (
+                <span
+                  aria-disabled="true"
+                  className="text-grey-600 flex h-12 shrink-0 cursor-not-allowed items-center gap-2 rounded-full bg-white/70 px-4 text-sm whitespace-nowrap"
+                >
+                  {step.action.label}
+                  <ArrowUpRight size={16} aria-hidden="true" />
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }

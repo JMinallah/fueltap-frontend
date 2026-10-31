@@ -1,194 +1,152 @@
 "use client";
 
-import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import { Field, FieldLabel, FieldGroup, FieldError } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { useRouter } from "next/navigation";
-import { toast } from "@/components/ui/toast";
-import { managerSchema, ManagerInput } from "@/lib/validators/adminSchemas";
-import { inviteManager } from "@/lib/server/admin-managers";
-import { Station } from "@/lib/server/admin-stations";
-import InviteSentModal from "./InviteSentModal";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { inviteManager } from "@/lib/server/admin/managers";
+import { managerSchema, type ManagerInput } from "@/lib/validators/adminSchemas";
+import { adminToast } from "@/components/admin/ui/AdminToaster";
+import FocusedCard from "@/components/admin/ui/FocusedCard";
+import FocusedHeader from "@/components/admin/ui/FocusedHeader";
+import {
+  FormField,
+  PillInput,
+  outlinePillClass,
+  primaryPillClass,
+} from "@/components/admin/ui/PillInput";
+import SuccessCard from "@/components/admin/ui/SuccessCard";
 
-interface Props {
-  stations: Station[];
-}
+const emptyForm: ManagerInput = { name: "", email: "", phone: "" };
 
-export default function InviteManagerForm({ stations }: Props) {
-  const form = useForm<ManagerInput>({
+export default function InviteManagerForm() {
+  const router = useRouter();
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isValid },
+  } = useForm<ManagerInput>({
     resolver: zodResolver(managerSchema),
-    defaultValues: { name: "", email: "", phone: "", stationId: "" },
+    defaultValues: emptyForm,
+    mode: "onChange",
   });
-  const [loading, setLoading] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const { push } = useRouter();
-
-  const activeStations = stations.filter((s) => s.status === "active");
 
   async function onSubmit(values: ManagerInput) {
-    setLoading(true);
+    setIsSubmitting(true);
     try {
       const result = await inviteManager(values);
-      if (!result?.success) {
-        toast.add({
-          title: "Invite failed",
-          description: (result as { message?: string }).message || "Please try again.",
-          type: "error",
-        });
+      if (!result.success) {
+        adminToast.add({ description: result.message, type: "error" });
         return;
       }
-      setShowSuccess(true);
+      setInvitedEmail(result.message);
     } catch {
-      toast.add({ title: "Error", description: "Unable to send invite. Please try again.", type: "error" });
+      adminToast.add({
+        description: "Please check your connection and try again.",
+        type: "error",
+      });
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
+  }
+
+  if (invitedEmail) {
+    return (
+      <SuccessCard
+        title="Invitation Sent Successfully"
+        primary={{ label: "Go to Dashboard", href: "/admin/dashboard" }}
+        secondary={{
+          label: "Invite Another",
+          onClick: () => {
+            reset(emptyForm);
+            setInvitedEmail(null);
+          },
+        }}
+      >
+        An onboarding link has been dispatched to{" "}
+        <strong className="font-semibold text-black">{invitedEmail}</strong>.
+        They will appear on your team dashboard as Pending Invite.
+      </SuccessCard>
+    );
   }
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="font-pjs text-2xl font-semibold text-neutral-900">Invite a Manager</h1>
-        <p className="text-sm text-neutra-700 mt-1">
-          The manager will receive an email invitation to join FuelTap.
-        </p>
-      </div>
-
-      <form
-        onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}
-        id="invite-manager-form"
-        autoComplete="off"
-        className="max-w-xl flex flex-col gap-5 pb-10"
+      <FocusedHeader progress={100} action="back" onAction={() => router.back()} />
+      <FocusedCard
+        title="Invite Manager"
+        description="Provide the legal contact details of your branch or cluster manager. They will receive an invitation link to verify their identity and manage their assigned stations."
       >
-        <FieldGroup>
-          <Controller
-            control={form.control}
-            name="name"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Manager&apos;s Name</FieldLabel>
-                <Input placeholder="e.g. Ochife Ogechukwu" disabled={loading} {...field} />
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="mt-6 flex flex-col gap-4"
+          noValidate
+        >
+          <FormField label="Full Name" htmlFor="name" error={errors.name?.message}>
+            <PillInput
+              id="name"
+              autoComplete="name"
+              placeholder="Enter full name"
+              aria-invalid={!!errors.name}
+              {...register("name")}
+            />
+          </FormField>
+          <FormField
+            label="Official Email Address"
+            htmlFor="email"
+            error={errors.email?.message}
+          >
+            <PillInput
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="Enter email address"
+              aria-invalid={!!errors.email}
+              {...register("email")}
+            />
+          </FormField>
+          <FormField label="Phone Number" htmlFor="phone" error={errors.phone?.message}>
+            <div className="flex h-12.5 overflow-hidden rounded-full border border-gray-200 bg-white focus-within:ring-4 focus-within:ring-primary-50">
+              <span className="text-primary-400 flex shrink-0 items-center gap-3 bg-gray-100 px-5 text-base">
+                NGN <ChevronDown size={18} aria-hidden="true" />
+              </span>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                placeholder="e.g. 7034567890"
+                aria-invalid={!!errors.phone}
+                {...register("phone", {
+                  setValueAs: (v: string) => v.replace(/\D/g, ""),
+                })}
+                className="h-full! min-w-0 flex-1 rounded-none! border-0! bg-transparent! px-3! text-base! text-black! outline-none placeholder:text-grey-800!"
+              />
+            </div>
+          </FormField>
 
-          <Controller
-            control={form.control}
-            name="email"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Email Address</FieldLabel>
-                <Input placeholder="manager@company.com" disabled={loading} {...field} />
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
-
-          <Controller
-            control={form.control}
-            name="phone"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Phone Number</FieldLabel>
-                <div className="flex">
-                  <div className="text-primary-400 bg-primary-50 flex items-center justify-center gap-1 rounded-l px-2 text-sm">
-                    +234 <ChevronDown size={14} />
-                  </div>
-                  <Input
-                    placeholder="80 1234 5678"
-                    inputMode="numeric"
-                    onInput={(e) => {
-                      const t = e.currentTarget as HTMLInputElement;
-                      t.value = t.value.replace(/[^0-9]/g, "");
-                    }}
-                    className="rounded-l-none border-l-0"
-                    disabled={loading}
-                    {...field}
-                  />
-                </div>
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
-
-          <Controller
-            control={form.control}
-            name="stationId"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Assign Station</FieldLabel>
-                <Select
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  disabled={loading || activeStations.length === 0}
-                >
-                  <SelectTrigger className="h-10 w-full rounded-lg border border-neutra-500">
-                    <SelectValue
-                      placeholder={
-                        activeStations.length === 0
-                          ? "No active stations — create one first"
-                          : "Select a station"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeStations.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name} — {s.city}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
-
-          <div className="flex gap-3 mt-2">
-            <Button
-              variant="outline"
-              size="full"
-              className="basis-1/2 border-primary text-primary"
+          <div className="mt-10 flex gap-4">
+            <button
               type="button"
-              disabled={loading}
-              onClick={() => push("/admin/managers")}
+              onClick={() => router.push("/admin/managers")}
+              className={outlinePillClass}
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
-              variant="secondary"
-              size="full"
-              className="basis-1/2 text-white"
-              disabled={loading}
+              disabled={!isValid || isSubmitting}
+              className={primaryPillClass}
             >
-              {loading ? "Sending..." : "Send Invite"}
-            </Button>
+              {isSubmitting ? "Sending…" : "Send Invitation"}
+            </button>
           </div>
-        </FieldGroup>
-      </form>
-
-      {showSuccess && (
-        <InviteSentModal
-          onClose={() => push("/admin/managers")}
-          onInviteAnother={() => {
-            setShowSuccess(false);
-            form.reset();
-          }}
-        />
-      )}
+        </form>
+      </FocusedCard>
     </>
   );
 }

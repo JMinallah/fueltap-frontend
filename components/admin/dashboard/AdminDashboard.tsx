@@ -1,69 +1,144 @@
 "use client";
 
-import { DashboardMetrics } from "@/lib/server/admin-dashboard";
+import { Plus } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { markSetupCompletionShown } from "@/lib/server/admin/dashboard";
+import type {
+  DashboardMetrics,
+  SetupStatus,
+} from "@/lib/server/admin/types";
+import DateRangePill, { type DateRange } from "@/components/admin/ui/DateRangePill";
+import FilterPill from "@/components/admin/ui/FilterPill";
+import PageHeading from "@/components/admin/ui/PageHeading";
+import ProcessingOverlay from "@/components/admin/ui/ProcessingOverlay";
+import { primaryPillClass } from "@/components/admin/ui/PillInput";
 import AdminSetupChecklist from "./AdminSetupChecklist";
 import AdminStatsRow from "./AdminStatsRow";
-import RevenueTrendChart from "./RevenueTrendChart";
 import OrdersTrendChart from "./OrdersTrendChart";
+import RevenueTrendChart from "./RevenueTrendChart";
 import TopStationsTable from "./TopStationsTable";
-import { useAuth } from "@/context/AuthProvider";
-import { useTimeOfDay } from "@/hooks/useTimeOfDay";
 
 interface Props {
+  companyName: string;
+  setup: SetupStatus;
   metrics: DashboardMetrics | null;
-  setup: {
-    kybSubmitted: boolean;
-    hasManager: boolean;
-    hasStation: boolean;
-    companyId?: string;
-  };
+  stations: { id: string; name: string }[];
 }
 
-export default function AdminDashboard({ metrics, setup }: Props) {
-  const { user } = useAuth();
-  const { timeOfDay } = useTimeOfDay();
-  const firstName = user?.profile.fullName?.split(" ")[0];
+const HANDOFF_MS = 2500;
 
-  // State A: Account created but setup not complete
-  const isNewUser = !setup.kybSubmitted || !setup.hasManager || !setup.hasStation;
+export default function AdminDashboard({
+  companyName,
+  setup,
+  metrics,
+  stations,
+}: Props) {
+  const router = useRouter();
+  const setupComplete =
+    setup.kybSubmitted && setup.hasManager && setup.hasStation;
+  // Play the "Processing…" hand-off once, the first time setup is complete.
+  const showHandoff = setupComplete && !setup.completionShown;
+
+  useEffect(() => {
+    if (!showHandoff) return;
+    const timer = setTimeout(async () => {
+      await markSetupCompletionShown();
+      router.refresh();
+    }, HANDOFF_MS);
+    return () => clearTimeout(timer);
+  }, [showHandoff, router]);
+
+  if (!setupComplete || showHandoff) {
+    return (
+      <>
+        <PageHeading
+          title="Dashboard"
+          subtitle={companyName}
+          subtitleTone="yellow"
+        />
+        <AdminSetupChecklist setup={setup} />
+        {showHandoff && <ProcessingOverlay />}
+      </>
+    );
+  }
+
+  return (
+    <FullDashboard
+      companyName={companyName}
+      metrics={metrics}
+      stations={stations}
+    />
+  );
+}
+
+function FullDashboard({
+  companyName,
+  metrics,
+  stations,
+}: Omit<Props, "setup">) {
+  const [stationId, setStationId] = useState("all");
+  const [range, setRange] = useState<DateRange>({ from: "", to: "" });
+
+  const stationOptions = [
+    { label: "All Stations", value: "all" },
+    ...stations.map((s) => ({ label: s.name, value: s.id })),
+  ];
+  const stationLabel =
+    stationOptions.find((o) => o.value === stationId)?.label ?? "All Stations";
 
   return (
     <>
-      <section>
-        <h1 className="font-pjs mb-1 text-2xl font-semibold md:text-3xl">
-          Good {timeOfDay || "day"} {firstName},
-        </h1>
-        <p className="text-accent mb-4 text-[18px] lg:text-2xl">
-          Welcome to your dashboard
-        </p>
-      </section>
-
-      {isNewUser ? (
-        <AdminSetupChecklist
-          kybSubmitted={setup.kybSubmitted}
-          hasManager={setup.hasManager}
-          hasStation={setup.hasStation}
-          companyId={setup.companyId}
+      <PageHeading
+        title="Dashboard"
+        subtitle={`${companyName} · ${stationLabel.replace(/^TotalEnergies - /, "")}`}
+        subtitleTone="yellow"
+      >
+        <FilterPill
+          label="Stations"
+          options={stationOptions}
+          value={stationId}
+          onChange={setStationId}
         />
-      ) : (
-        <div className="flex flex-col gap-6">
+        <DateRangePill value={range} onChange={setRange} />
+        <Link
+          href="/admin/stations/new"
+          className={`${primaryPillClass} w-auto! gap-2 px-6`}
+        >
+          <Plus size={18} aria-hidden="true" />
+          New Station
+        </Link>
+      </PageHeading>
+
+      {metrics ? (
+        <div className="mt-10 flex flex-col gap-5">
           <AdminStatsRow metrics={metrics} />
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <RevenueTrendChart data={metrics?.revenueTrend ?? []} />
-            <OrdersTrendChart data={metrics?.ordersTrend ?? []} />
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <RevenueTrendChart
+              total={metrics.revenueTotal}
+              data={metrics.revenueTrend}
+            />
+            <OrdersTrendChart
+              total={metrics.ordersTotal}
+              data={metrics.ordersTrend}
+            />
           </div>
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <TopStationsTable
-              title="Top Performing Stations"
-              stations={metrics?.topStations ?? []}
+              title="Top-performing stations"
+              stations={metrics.topStations}
             />
             <TopStationsTable
-              title="Lowest Performing Stations"
-              stations={metrics?.lowestStations ?? []}
-              isLowest
+              title="Lowest-performing stations"
+              stations={metrics.lowestStations}
             />
           </div>
         </div>
+      ) : (
+        <p role="alert" className="text-error mt-10 text-base">
+          We couldn&apos;t load your dashboard figures. Please refresh the page.
+        </p>
       )}
     </>
   );

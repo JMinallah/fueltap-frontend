@@ -8,9 +8,12 @@ import {
 
 export function proxy(request: NextRequest) {
   const token = request.cookies.get("x-access-token")?.value;
+  const loginPath = request.nextUrl.pathname.startsWith("/admin/")
+    ? "/admin/login"
+    : "/login";
   const response = token
     ? NextResponse.next()
-    : NextResponse.redirect(new URL("/login", request.url));
+    : NextResponse.redirect(new URL(loginPath, request.url));
 
   const isPrefetch = request.headers.has("next-router-prefetch") ||
     request.headers.get("purpose") === "prefetch" ||
@@ -27,5 +30,13 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/user/:path*"],
+  // Admin login, invite sign-up and password reset stay public.
+  matcher: [
+    "/user/:path*",
+    "/admin/dashboard/:path*",
+    "/admin/stations/:path*",
+    "/admin/managers/:path*",
+    "/admin/inventory/:path*",
+    "/admin/kyb/:path*",
+  ],
 };

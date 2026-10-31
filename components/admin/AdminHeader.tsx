@@ -2,16 +2,7 @@
 
 import { splitName } from "@/lib/helpers/help";
 import Logo from "../web/Logo";
-import {
-  Bell,
-  ChevronDown,
-  LayoutDashboard,
-  Menu,
-  Package,
-  Users,
-  X,
-  Zap,
-} from "lucide-react";
+import { Bell, ChevronDown, Menu, X } from "lucide-react";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import Link from "next/link";
@@ -21,14 +12,13 @@ import { cn } from "@/lib/utils";
 import { useScrollLock } from "@/hooks/useScrollLock";
 import { useEffect, useState } from "react";
 import { logoutAction } from "@/lib/server/auth";
-import { toast } from "../ui/toast";
-
+import { adminToast } from "./ui/AdminToaster";
 
 const adminLinks = [
-  { name: "Dashboard", path: "/admin/dashboard", icon: LayoutDashboard },
-  { name: "Stations", path: "/admin/stations", icon: Zap },
-  { name: "Managers", path: "/admin/managers", icon: Users },
-  { name: "Inventory", path: "/admin/inventory", icon: Package },
+  { name: "Dashboard", path: "/admin/dashboard" },
+  { name: "Stations", path: "/admin/stations" },
+  { name: "Managers", path: "/admin/managers" },
+  { name: "Inventory", path: "/admin/inventory" },
 ];
 
 const accountItemClassName =
@@ -36,37 +26,31 @@ const accountItemClassName =
 
 export default function AdminHeader() {
   const { user } = useAuth();
-  const initials = splitName?.(user?.profile.fullName || "admin");
+  const fullName = user?.profile?.fullName ?? "";
+  const initials = splitName(fullName || "Admin");
 
   const pathname = usePathname();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-
-  const router = useRouter();
-
-  async function handleAdminLogout() {
-    if (!user?.id) {
-      router.replace("/admin/login");
-      return;
-    }
-    toast.promise(
-      (async () => {
-        const res = await logoutAction(user.id, window.location.pathname);
-        if (!res?.success) throw new Error("Could not log out.");
-        router.replace("/admin/login");
-      })(),
-      {
-        loading: "Logging out…",
-        success: "Logged out successfully.",
-        error: "Could not log out.",
-      },
-    );
-  }
 
   const isActive = (path: string) =>
     pathname === path || pathname.startsWith(`${path}/`);
 
+  async function handleLogout() {
+    if (!user?.id) {
+      router.replace("/admin/login");
+      return;
+    }
+    const res = await logoutAction(user.id, window.location.pathname);
+    if (!res?.success) {
+      adminToast.add({ description: "Could not log out.", type: "error" });
+      return;
+    }
+    router.replace("/admin/login");
+  }
 
+  // Below md the header isn't pinned, so open menus would scroll away.
   useScrollLock(
     menuOpen ||
       (accountOpen && window.matchMedia("(max-width: 767px)").matches),
@@ -80,6 +64,24 @@ export default function AdminHeader() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
+
+  const navLinks = (onNavigate?: () => void) =>
+    adminLinks.map((link) => (
+      <Link
+        key={link.path}
+        href={link.path}
+        onClick={onNavigate}
+        aria-current={isActive(link.path) ? "page" : undefined}
+        className={cn(
+          "text-sm whitespace-nowrap transition-colors md:text-base",
+          isActive(link.path)
+            ? "text-primary-500 font-medium"
+            : "text-grey-800 hover:text-black",
+        )}
+      >
+        {link.name}
+      </Link>
+    ));
 
   return (
     <header
@@ -103,28 +105,12 @@ export default function AdminHeader() {
           </button>
         </div>
 
-        {/* ===== Logo ===== */}
         <div className="flex shrink-0 justify-center xl:justify-start">
           <Logo />
         </div>
 
-        {/* ===== Desktop nav tabs ===== */}
-        <nav className="hidden items-center gap-1 xl:flex">
-          {adminLinks.map((link) => (
-            <Link
-              key={link.path}
-              href={link.path}
-              className={cn(
-                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                isActive(link.path)
-                  ? "bg-primary-50 text-primary-500"
-                  : "text-grey-800 hover:bg-gray-100 hover:text-black",
-              )}
-            >
-              <link.icon size={16} />
-              {link.name}
-            </Link>
-          ))}
+        <nav aria-label="Admin" className="hidden items-center gap-6 xl:flex">
+          {navLinks()}
         </nav>
 
         {/* ===== Notifications + account ===== */}
@@ -148,16 +134,16 @@ export default function AdminHeader() {
               aria-label="Account menu"
               className="flex cursor-pointer items-center gap-2 text-left"
             >
-              <span className="hidden max-w-40 flex-col md:flex">
-                <span className="truncate text-base text-black capitalize">
-                  {user?.profile.fullName}
+              <span className="hidden max-w-40 flex-col text-right md:flex">
+                <span className="truncate text-lg text-black capitalize">
+                  {fullName}
                 </span>
                 <span className="text-grey-800 truncate text-sm">
-                  {user?.profile.email}
+                  {user?.profile?.email}
                 </span>
               </span>
-              <Avatar className="size-10 xl:size-11">
-                <AvatarFallback className="bg-secondary-500 text-sm font-medium text-white xl:text-base">
+              <Avatar className="size-11">
+                <AvatarFallback className="bg-blue-600 text-base font-medium text-white">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -175,13 +161,7 @@ export default function AdminHeader() {
               sideOffset={8}
               className="w-60 gap-0 divide-y divide-gray-100 overflow-hidden rounded-xl p-0 md:w-94"
             >
-              <Link
-                href="/admin/account-settings"
-                className={accountItemClassName}
-                onClick={() => setAccountOpen(false)}
-              >
-                Account Settings
-              </Link>
+              {/* The bell is hidden on mobile, so notifications live here. */}
               <button
                 type="button"
                 className={cn(accountItemClassName, "md:hidden")}
@@ -194,17 +174,24 @@ export default function AdminHeader() {
                 className={accountItemClassName}
                 onClick={() => {
                   setAccountOpen(false);
-                  void handleAdminLogout();
+                  void handleLogout();
                 }}
               >
                 Log Out
               </button>
+              <Link
+                href="/support"
+                className={accountItemClassName}
+                onClick={() => setAccountOpen(false)}
+              >
+                Help & Support
+              </Link>
             </PopoverContent>
           </Popover>
         </div>
       </div>
 
-      {/* ===== Mobile nav menu overlay ===== */}
+      {/* ===== Nav menu overlay (below xl) ===== */}
       {menuOpen && (
         <div
           id="admin-nav-menu"
@@ -213,27 +200,11 @@ export default function AdminHeader() {
         >
           <div className="container pt-2">
             <nav
-              aria-label="Admin navigation"
-              className="flex w-full flex-col gap-1 rounded-2xl bg-white p-3 shadow-sm"
+              aria-label="Admin"
+              className="flex w-full items-center justify-between gap-4 rounded-full bg-white px-6 py-3 shadow-sm md:w-fit md:justify-start md:gap-6 md:px-7"
               onClick={(e) => e.stopPropagation()}
             >
-              {adminLinks.map((link) => (
-                <Link
-                  key={link.path}
-                  href={link.path}
-                  onClick={() => setMenuOpen(false)}
-                  aria-current={isActive(link.path) ? "page" : undefined}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors",
-                    isActive(link.path)
-                      ? "bg-primary-50 text-primary-500"
-                      : "text-grey-800 hover:bg-gray-100 hover:text-black",
-                  )}
-                >
-                  <link.icon size={18} />
-                  {link.name}
-                </Link>
-              ))}
+              {navLinks(() => setMenuOpen(false))}
             </nav>
           </div>
         </div>

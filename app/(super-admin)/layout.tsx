@@ -1,12 +1,16 @@
-import React from "react";
+import AdminToaster from "@/components/admin/ui/AdminToaster";
 
-// Root wrapper for all /admin/* routes.
-// Auth guard only lives in (dashboard)/layout.tsx so that
-// onboarding pages (login, register, kyb…) are publicly accessible.
+// Wraps every /admin page. The super admin designs use Plus Jakarta Sans
+// throughout and their own toast style.
 export default function SuperAdminRootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <div className="font-pjs flex min-h-dvh flex-1 flex-col">
+      {children}
+      <AdminToaster />
+    </div>
+  );
 }

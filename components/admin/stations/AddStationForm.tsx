@@ -1,217 +1,263 @@
 "use client";
 
-import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
-import { Button } from "@/components/ui/button";
-import { Field, FieldLabel, FieldGroup, FieldError } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { toast } from "@/components/ui/toast";
-import { stationSchema, StationInput } from "@/lib/validators/adminSchemas";
-import { createStation, Station } from "@/lib/server/admin-stations";
-import { Manager } from "@/lib/server/admin-managers";
-import StationCreatedModal from "./StationCreatedModal";
+import { useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
+import { nigerianStateNames, nigerianStates } from "@/lib/data/nigeria";
+import { createStation } from "@/lib/server/admin/stations";
+import { stationSchema, type StationInput } from "@/lib/validators/adminSchemas";
+import { adminToast } from "@/components/admin/ui/AdminToaster";
+import FocusedCard from "@/components/admin/ui/FocusedCard";
+import FocusedHeader from "@/components/admin/ui/FocusedHeader";
+import ManagerPicker, { type ManagerOption } from "@/components/admin/ui/ManagerPicker";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  FormField,
+  PillInput,
+  outlinePillClass,
+  primaryPillClass,
+} from "@/components/admin/ui/PillInput";
+import PillSelect from "@/components/admin/ui/PillSelect";
+import SuccessCard from "@/components/admin/ui/SuccessCard";
+import AddressAutocomplete from "./AddressAutocomplete";
 
-const NIGERIAN_STATES = [
-  "Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
-  "Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT","Gombe","Imo",
-  "Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos","Nasarawa",
-  "Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers","Sokoto","Taraba",
-  "Yobe","Zamfara",
-];
+// Leaflet touches `window` on import, so the map only loads in the browser.
+const StationLocationMap = dynamic(() => import("./StationLocationMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-62.5 animate-pulse rounded-xl bg-gray-100" aria-hidden="true" />
+  ),
+});
 
-interface Props {
-  managers: Manager[];
-}
+const LAGOS = { lat: 6.5244, lng: 3.3792 };
 
-export default function AddStationForm({ managers }: Props) {
-  const form = useForm<StationInput>({
+const emptyForm: StationInput = {
+  name: "",
+  address: "",
+  state: "",
+  city: "",
+  latitude: null,
+  longitude: null,
+  managerId: null,
+};
+
+export default function AddStationForm({
+  managers,
+}: {
+  managers: ManagerOption[];
+}) {
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [created, setCreated] = useState<{
+    station: string;
+    manager: string | null;
+  } | null>(null);
+  const [mapCenter, setMapCenter] = useState(LAGOS);
+
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors, isValid },
+  } = useForm<StationInput>({
     resolver: zodResolver(stationSchema),
-    defaultValues: { name: "", address: "", state: "", city: "", managerId: "" },
+    defaultValues: emptyForm,
+    mode: "onChange",
   });
-  const [loading, setLoading] = useState(false);
-  const [createdStation, setCreatedStation] = useState<Station | null>(null);
-  const { push } = useRouter();
+
+  const state = useWatch({ control, name: "state" });
+  const cities = state ? (nigerianStates[state] ?? []) : [];
 
   async function onSubmit(values: StationInput) {
-    setLoading(true);
+    setIsSubmitting(true);
     try {
       const result = await createStation(values);
-      if (!result?.success || !result.data?.station) {
-        toast.add({
-          title: "Failed to create station",
-          description: (result as { message?: string }).message || "Please try again.",
-          type: "error",
-        });
+      if (!result.success) {
+        adminToast.add({ description: result.message, type: "error" });
         return;
       }
-      setCreatedStation(result.data.station);
+      setCreated({
+        station: result.data.name,
+        manager: result.data.manager?.name ?? null,
+      });
     } catch {
-      toast.add({ title: "Error", description: "Unable to create station. Please try again.", type: "error" });
+      adminToast.add({
+        description: "Please check your connection and try again.",
+        type: "error",
+      });
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   }
 
-  const activeManagers = managers.filter((m) => m.status === "active");
+  if (created) {
+    return (
+      <SuccessCard
+        title="Station Created Successfully"
+        primary={{ label: "Go to Dashboard", href: "/admin/dashboard" }}
+        secondary={{
+          label: "Add Another Station",
+          onClick: () => {
+            reset(emptyForm);
+            setMapCenter(LAGOS);
+            setCreated(null);
+          },
+        }}
+      >
+        <strong className="font-semibold text-black">{created.station}</strong>{" "}
+        is now pending compliance review.{" "}
+        {created.manager ? (
+          <>
+            A push notification will be sent to{" "}
+            <strong className="font-semibold text-black">{created.manager}</strong>{" "}
+            when active to finalize the setup.
+          </>
+        ) : (
+          "Assign a manager to finish setting it up."
+        )}
+      </SuccessCard>
+    );
+  }
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="font-pjs text-2xl font-semibold text-neutral-900">Add New Station</h1>
-        <p className="text-sm text-neutra-700 mt-1">Fill in the station details below</p>
-      </div>
-
-      <form
-        onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}
-        id="add-station-form"
-        autoComplete="off"
-        className="max-w-xl flex flex-col gap-5 pb-10"
+      <FocusedHeader
+        progress={50}
+        action="cancel"
+        onAction={() => router.push("/admin/stations")}
+        showHelp
+      />
+      <FocusedCard
+        title="Add New Fuel Station"
+        description="Enter the branch location details, map coordinates, and assign a manager to oversee this fuel station profile on the platform."
       >
-        <FieldGroup>
-          {/* Station name */}
-          <Controller
-            control={form.control}
-            name="name"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Station Name</FieldLabel>
-                <Input placeholder="e.g. Lagos Island Station" disabled={loading} {...field} />
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
-
-          {/* Address */}
-          <Controller
-            control={form.control}
-            name="address"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">Street Address</FieldLabel>
-                <Input placeholder="e.g. 12 Marina Road" disabled={loading} {...field} />
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
-          />
-
-          {/* State + City */}
-          <div className="grid grid-cols-2 gap-3">
-            <Controller
-              control={form.control}
-              name="state"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel className="text-lg-medium">State</FieldLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    disabled={loading}
-                  >
-                    <SelectTrigger className="h-10 w-full rounded-lg border border-neutra-500">
-                      <SelectValue placeholder="Select state" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NIGERIAN_STATES.map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-                </Field>
-              )}
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="mt-8 flex flex-col gap-4"
+          noValidate
+        >
+          <FormField label="Branch Name" htmlFor="name" error={errors.name?.message}>
+            <PillInput
+              id="name"
+              placeholder="e.g. TotalEnergies - Lekki Phase 1 Branch"
+              aria-invalid={!!errors.name}
+              {...register("name")}
             />
+          </FormField>
 
+          <FormField
+            label="Street Address"
+            htmlFor="address"
+            error={errors.address?.message}
+          >
             <Controller
-              control={form.control}
-              name="city"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel className="text-lg-medium">City</FieldLabel>
-                  <Input placeholder="e.g. Victoria Island" disabled={loading} {...field} />
-                  {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-                </Field>
-              )}
-            />
-          </div>
-
-          {/* Assign Manager */}
-          <Controller
-            control={form.control}
-            name="managerId"
-            render={({ field, fieldState }) => (
-              <Field data-invalid={fieldState.invalid}>
-                <FieldLabel className="text-lg-medium">
-                  Assign Manager <span className="text-neutra-700 font-normal text-xs">(Optional)</span>
-                </FieldLabel>
-                <Select
+              control={control}
+              name="address"
+              render={({ field }) => (
+                <AddressAutocomplete
+                  id="address"
                   value={field.value}
-                  onValueChange={field.onChange}
-                  disabled={loading || activeManagers.length === 0}
-                >
-                  <SelectTrigger className="h-10 w-full rounded-lg border border-neutra-500">
-                    <SelectValue
-                      placeholder={
-                        activeManagers.length === 0
-                          ? "No active managers yet"
-                          : "Select a manager"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeManagers.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name} — {m.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {fieldState.invalid && fieldState.error && <FieldError errors={[fieldState.error]} />}
-              </Field>
-            )}
+                  invalid={!!errors.address}
+                  onChange={field.onChange}
+                  onSelect={(result) => {
+                    field.onChange(result.line1);
+                    setMapCenter({ lat: result.lat, lng: result.lng });
+                    setValue("latitude", result.lat);
+                    setValue("longitude", result.lng);
+                    if (result.state && nigerianStates[result.state]) {
+                      setValue("state", result.state, { shouldValidate: true });
+                      const city = nigerianStates[result.state].find(
+                        (c) => c.toLowerCase() === result.city?.toLowerCase(),
+                      );
+                      setValue("city", city ?? "", { shouldValidate: true });
+                    }
+                  }}
+                />
+              )}
+            />
+          </FormField>
+
+          <StationLocationMap
+            center={mapCenter}
+            onChange={(point) => {
+              setValue("latitude", point.lat);
+              setValue("longitude", point.lng);
+            }}
           />
 
-          <div className="flex gap-3 mt-2">
-            <Button
-              variant="outline"
-              size="full"
-              className="basis-1/2 border-primary text-primary"
-              type="button"
-              disabled={loading}
-              onClick={() => push("/admin/stations")}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="secondary"
-              size="full"
-              className="basis-1/2 text-white"
-              disabled={loading}
-            >
-              {loading ? "Creating..." : "Create Station"}
-            </Button>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField label="State" htmlFor="state" error={errors.state?.message}>
+              <Controller
+                control={control}
+                name="state"
+                render={({ field }) => (
+                  <PillSelect
+                    id="state"
+                    options={nigerianStateNames}
+                    value={field.value}
+                    placeholder="Choose state"
+                    onChange={(value) => {
+                      field.onChange(value);
+                      setValue("city", "", { shouldValidate: true });
+                    }}
+                  />
+                )}
+              />
+            </FormField>
+            <FormField label="City" htmlFor="city" error={errors.city?.message}>
+              <Controller
+                control={control}
+                name="city"
+                render={({ field }) => (
+                  <PillSelect
+                    id="city"
+                    options={cities}
+                    value={field.value}
+                    placeholder="Choose city"
+                    disabled={!state}
+                    onChange={field.onChange}
+                  />
+                )}
+              />
+            </FormField>
           </div>
-        </FieldGroup>
-      </form>
 
-      {createdStation && (
-        <StationCreatedModal
-          station={createdStation}
-          onClose={() => {
-            setCreatedStation(null);
-            push("/admin/stations");
-          }}
-        />
-      )}
+          <FormField label="Assign Manager" htmlFor="manager">
+            <Controller
+              control={control}
+              name="managerId"
+              render={({ field }) => (
+                <ManagerPicker
+                  id="manager"
+                  managers={managers}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+          </FormField>
+
+          <div className="mt-12 flex gap-4">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className={outlinePillClass}
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              disabled={!isValid || isSubmitting}
+              className={primaryPillClass}
+            >
+              {isSubmitting ? "Creating…" : "Next"}
+            </button>
+          </div>
+        </form>
+      </FocusedCard>
     </>
   );
 }

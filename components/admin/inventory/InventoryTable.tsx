@@ -1,100 +1,164 @@
 "use client";
 
-import { InventoryItem } from "@/lib/server/admin-inventory";
-import { Package } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState } from "react";
+import type { InventoryItem } from "@/lib/server/admin/types";
+import FilterPill from "@/components/admin/ui/FilterPill";
+import PageHeading from "@/components/admin/ui/PageHeading";
+import Pagination, { paginate } from "@/components/admin/ui/Pagination";
+import SearchBox from "@/components/admin/ui/SearchBox";
+import StatusBadge from "@/components/admin/ui/StatusBadge";
+import { formatDateTime, formatNaira } from "@/components/admin/ui/format";
 
-const statusStyle: Record<string, string> = {
-  "In Stock": "bg-green-100 text-green-700",
-  "Low Stock": "bg-yellow-100 text-yellow-700",
-  "Out of Stock": "bg-red-100 text-red-600",
-};
+const fuelOptions = [
+  { label: "All", value: "all" },
+  { label: "Petrol", value: "Petrol" },
+  { label: "Diesel", value: "Diesel" },
+  { label: "Cooking Gas", value: "Cooking Gas" },
+] as const;
 
-const fuelTypeBadge: Record<string, string> = {
-  Petrol: "bg-blue-100 text-blue-700",
-  Diesel: "bg-orange-100 text-orange-700",
-  "Cooking Gas": "bg-purple-100 text-purple-700",
-};
+export default function InventoryTable({ inventory }: { inventory: InventoryItem[] }) {
+  const [search, setSearch] = useState("");
+  const [station, setStation] = useState("all");
+  const [fuel, setFuel] = useState<(typeof fuelOptions)[number]["value"]>("all");
+  const [state, setState] = useState("all");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
 
-interface Props {
-  inventory: InventoryItem[];
-}
+  const unique = (values: string[]) => [...new Set(values)].sort();
+  const stationOptions = [
+    { label: "All Stations", value: "all" },
+    ...unique(inventory.map((i) => i.stationId)).map((id) => ({
+      label: inventory.find((i) => i.stationId === id)!.branchName,
+      value: id,
+    })),
+  ];
+  const stateOptions = [
+    { label: "All States", value: "all" },
+    ...unique(inventory.map((i) => i.state)).map((s) => ({ label: s, value: s })),
+  ];
 
-export default function InventoryTable({ inventory }: Props) {
-  if (inventory.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-primary-50">
-          <Package className="text-primary" size={28} />
-        </div>
-        <div>
-          <h2 className="font-pjs text-xl font-semibold text-neutral-900 mb-2">
-            No Inventory Data Yet
-          </h2>
-          <p className="text-sm text-neutra-700 max-w-xs">
-            Inventory will appear here once your stations are set up and receiving fuel.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const query = search.trim().toLowerCase();
+  const filtered = inventory.filter(
+    (item) =>
+      (station === "all" || item.stationId === station) &&
+      (fuel === "all" || item.fuelType === fuel) &&
+      (state === "all" || item.state === state) &&
+      (!query ||
+        [item.branchName, item.fuelType, item.managerName ?? ""].some((field) =>
+          field.toLowerCase().includes(query),
+        )),
+  );
+  const current = paginate(filtered, page, perPage);
+  const resetPage = <T,>(set: (value: T) => void) => (value: T) => {
+    set(value);
+    setPage(1);
+  };
 
   return (
     <>
-      <h1 className="font-pjs mb-6 text-2xl font-semibold">Inventory</h1>
+      <PageHeading
+        title="Inventory"
+        subtitle="View and monitor inventory across all stations."
+      />
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-xs border border-gray-100">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="border-b border-gray-100 text-left text-xs text-neutra-700 bg-gray-50">
-              <th className="px-4 py-3 font-medium">Station Name</th>
-              <th className="px-4 py-3 font-medium">Fuel Type</th>
-              <th className="px-4 py-3 font-medium">Volume (Litres)</th>
-              <th className="px-4 py-3 font-medium">Last Updated</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {inventory.map((item) => (
-              <tr
-                key={item.id}
-                className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors"
-              >
-                <td className="px-4 py-3 font-medium text-neutral-900">{item.stationName}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                      fuelTypeBadge[item.fuelType] ?? "bg-gray-100 text-gray-600",
-                    )}
-                  >
-                    {item.fuelType}
-                  </span>
-                </td>
-                <td className="px-4 py-3 tabular-nums text-neutra-700">
-                  {item.volumeLitres.toLocaleString()} L
-                </td>
-                <td className="px-4 py-3 text-neutra-700">
-                  {new Date(item.lastUpdated).toLocaleDateString("en-NG", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                      statusStyle[item.status] ?? "bg-gray-100 text-gray-600",
-                    )}
-                  >
-                    {item.status}
-                  </span>
-                </td>
+      <div className="mt-8 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <SearchBox
+          value={search}
+          onChange={resetPage(setSearch)}
+          placeholder="Search by branch name, fuel type.."
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <FilterPill
+            label="Stations"
+            options={stationOptions}
+            value={station}
+            onChange={resetPage(setStation)}
+          />
+          <FilterPill
+            label="Fuel Type"
+            options={fuelOptions}
+            value={fuel}
+            onChange={resetPage(setFuel)}
+          />
+          <FilterPill
+            label="State"
+            options={stateOptions}
+            value={state}
+            onChange={resetPage(setState)}
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-2xl border border-gray-100 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-max text-left text-base [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+            <thead>
+              <tr className="text-lg text-black">
+                <th className="px-5 py-5 font-medium">Branch Name</th>
+                <th className="px-5 py-5 font-medium">Manager</th>
+                <th className="px-5 py-5 font-medium">Fuel Type</th>
+                <th className="px-5 py-5 font-medium">Amount/Litre</th>
+                <th className="px-5 py-5 font-medium">Status</th>
+                <th className="px-5 py-5 font-medium">Last Updated</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {current.rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-grey-800 px-5 py-10 text-center">
+                    {inventory.length === 0
+                      ? "No inventory yet. Add a station to start listing fuel."
+                      : "No inventory matches your search or filters."}
+                  </td>
+                </tr>
+              )}
+              {current.rows.map((item) => {
+                const updated = formatDateTime(item.lastUpdated);
+                return (
+                  <tr key={item.id} className="odd:bg-[#EEF0FC]">
+                    <td className="max-w-52 truncate px-5 py-4 text-black" title={item.branchName}>
+                      {item.branchName}
+                    </td>
+                    <td className="px-5 py-4 text-black">
+                      {item.managerName ?? (
+                        <span className="text-yellow-600">Not Assigned</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-black">{item.fuelType}</td>
+                    <td className="px-5 py-4 text-black">
+                      {formatNaira(item.pricePerUnit)}
+                      {item.fuelType === "Cooking Gas" && (
+                        <span className="text-grey-800 text-sm">/kg</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {item.enabled ? (
+                        <StatusBadge tone="green">Enabled</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="grey">Disabled</StatusBadge>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-black">
+                      <span className="block">{updated.date}</span>
+                      <span className="text-grey-800 block">{updated.time}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          page={current.page}
+          perPage={perPage}
+          total={filtered.length}
+          noun="Items"
+          onPageChange={setPage}
+          onPerPageChange={(value) => {
+            setPerPage(value);
+            setPage(1);
+          }}
+        />
       </div>
     </>
   );

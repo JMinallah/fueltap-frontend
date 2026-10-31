@@ -1,177 +1,233 @@
 "use client";
 
-import { useState } from "react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { Plus, MoreVertical, Zap } from "lucide-react";
-import { Station, deactivateStation, reactivateStation } from "@/lib/server/admin-stations";
-import { toast } from "@/components/ui/toast";
+import { useState } from "react";
+import type { StationView } from "@/lib/server/admin/types";
+import ActionsMenu from "@/components/admin/ui/ActionsMenu";
+import EmptyIllustration from "@/components/admin/ui/EmptyIllustration";
+import FilterPill from "@/components/admin/ui/FilterPill";
+import type { ManagerOption } from "@/components/admin/ui/ManagerPicker";
+import PageHeading from "@/components/admin/ui/PageHeading";
+import Pagination, { paginate } from "@/components/admin/ui/Pagination";
+import { primaryPillClass } from "@/components/admin/ui/PillInput";
+import SearchBox from "@/components/admin/ui/SearchBox";
+import StatCard from "@/components/admin/ui/StatCard";
+import { ComplianceBadge, StationStatusBadge } from "./StationBadges";
+import { useStationActions } from "./useStationActions";
 
-import DeactivateStationDialog from "./DeactivateStationDialog";
-import ReactivateStationDialog from "./ReactivateStationDialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+const statusOptions = [
+  { label: "All Statuses", value: "all" },
+  { label: "Active", value: "active" },
+  { label: "Inactive", value: "inactive" },
+  { label: "Unassigned", value: "unassigned" },
+] as const;
 
-interface Props {
-  initialStations: Station[];
-  managers?: Manager[];
-}
+type StatusFilter = (typeof statusOptions)[number]["value"];
 
-const statusStyle: Record<string, string> = {
-  active: "bg-green-100 text-green-700",
-  deactivated: "bg-red-100 text-red-600",
-};
+export default function StationsList({
+  stations,
+  managers,
+}: {
+  stations: StationView[];
+  managers: ManagerOption[];
+}) {
+  const { actionsFor, dialogs } = useStationActions(managers);
+  const [search, setSearch] = useState("");
+  const [stationFilter, setStationFilter] = useState("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
 
-export default function StationsList({ initialStations, managers }: Props) {
-  const [stations, setStations] = useState<Station[]>(initialStations);
-  const [deactivateTarget, setDeactivateTarget] = useState<Station | null>(null);
-  const [reactivateTarget, setReactivateTarget] = useState<Station | null>(null);
-  const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const stationOptions = [
+    { label: "All Stations", value: "all" },
+    ...stations.map((s) => ({ label: s.name, value: s.id })),
+  ];
 
-  async function handleDeactivate(station: Station) {
-    const result = await deactivateStation(station.id);
-    if (result.data?.blocked) {
-      setBlockedMessage("You can't deactivate this station now — it has outstanding orders.");
-      setDeactivateTarget(station);
-      return;
-    }
-    if (result.success) {
-      setStations((prev) =>
-        prev.map((s) => (s.id === station.id ? { ...s, status: "deactivated" } : s)),
-      );
-      toast.add({ title: "Station deactivated", type: "success" });
-    }
-    setDeactivateTarget(null);
-  }
+  const query = search.trim().toLowerCase();
+  const filtered = stations.filter(
+    (s) =>
+      (stationFilter === "all" || s.id === stationFilter) &&
+      (status === "all" || s.displayStatus === status) &&
+      (!query ||
+        [s.name, s.city, s.address, s.manager?.name ?? ""].some((field) =>
+          field.toLowerCase().includes(query),
+        )),
+  );
+  const current = paginate(filtered, page, perPage);
 
-  async function handleReactivate(station: Station) {
-    const result = await reactivateStation(station.id);
-    if (result.success) {
-      setStations((prev) =>
-        prev.map((s) => (s.id === station.id ? { ...s, status: "active" } : s)),
-      );
-      toast.add({ title: "Station reactivated", type: "success" });
-    }
-    setReactivateTarget(null);
-  }
-
-  if (stations.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-6 py-20 text-center">
-        <div className="flex size-16 items-center justify-center rounded-full bg-primary-50">
-          <Zap className="text-primary" size={28} />
-        </div>
-        <div>
-          <h2 className="font-pjs text-xl font-semibold text-neutral-900 mb-2">
-            No Stations Yet
-          </h2>
-          <p className="text-sm text-neutra-700 max-w-xs">
-            Add your first fuel station to start managing orders and inventory.
-          </p>
-        </div>
-        <Button variant="secondary" size="pill" className="text-white" asChild>
-          <Link href="/admin/stations/new">
-            <Plus size={16} />
-            Add New Station
-          </Link>
-        </Button>
-      </div>
-    );
-  }
+  const stats = {
+    total: stations.length,
+    active: stations.filter((s) => s.displayStatus === "active").length,
+    setupIncomplete: stations.filter(
+      (s) => s.manager && s.complianceStatus === "pending",
+    ).length,
+    unassigned: stations.filter((s) => !s.manager).length,
+  };
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-pjs text-2xl font-semibold">Stations</h1>
-        <Button variant="secondary" size="pill" className="text-white" asChild>
-          <Link href="/admin/stations/new">
-            <Plus size={16} />
-            Add New Station
+      <PageHeading
+        title="Stations"
+        subtitle="Manage and scale your retail outlets. Track managers, view live statuses, and open new branches."
+      />
+
+      <div className="mt-10 grid grid-cols-2 gap-3 md:gap-5 lg:grid-cols-4">
+        <StatCard label="Total Stations" value={String(stats.total)} trend={0} />
+        <StatCard label="Active Stations" value={String(stats.active)} trend={0} />
+        <StatCard
+          label="Setup Incomplete"
+          value={String(stats.setupIncomplete)}
+          trend={0}
+        />
+        <StatCard
+          label="Unassigned Stations"
+          value={String(stats.unassigned)}
+          trend={0}
+        />
+      </div>
+
+      <div className="mt-8 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <SearchBox
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+          placeholder="Search by station name, city, or manager.."
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <FilterPill
+            label="Stations"
+            options={stationOptions}
+            value={stationFilter}
+            onChange={(value) => {
+              setStationFilter(value);
+              setPage(1);
+            }}
+          />
+          <FilterPill
+            label="Status"
+            options={statusOptions}
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+          />
+          <Link
+            href="/admin/stations/new"
+            className={`${primaryPillClass} w-auto! gap-2 px-6`}
+          >
+            <Plus size={18} aria-hidden="true" />
+            New Station
           </Link>
-        </Button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-xs border border-gray-100">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 text-left text-xs text-neutra-700 bg-gray-50">
-              <th className="px-4 py-3 font-medium">Station Name</th>
-              <th className="px-4 py-3 font-medium">Address</th>
-              <th className="px-4 py-3 font-medium">Manager</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stations.map((station) => (
-              <tr
-                key={station.id}
-                className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors"
-              >
-                <td className="px-4 py-3 font-medium text-neutral-900">{station.name}</td>
-                <td className="px-4 py-3 text-neutra-700 max-w-[200px] truncate">
-                  {station.address}, {station.city}, {station.state}
-                </td>
-                <td className="px-4 py-3 text-neutra-700">
-                  {station.managerName ?? <span className="text-gray-400">Unassigned</span>}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize",
-                      statusStyle[station.status] ?? "bg-gray-100 text-gray-600",
-                    )}
-                  >
-                    {station.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <Popover>
-                    <PopoverTrigger className="cursor-pointer p-1 rounded hover:bg-gray-100">
-                      <MoreVertical size={16} className="text-neutra-700" />
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-44 p-1">
-                      {station.status === "active" ? (
-                        <button
-                          className="flex w-full items-center rounded px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                          onClick={() => setDeactivateTarget(station)}
-                        >
-                          Deactivate
-                        </button>
+      {stations.length === 0 ? (
+        <div className="mt-5 flex flex-col items-center text-center">
+          <EmptyIllustration />
+          <h2 className="mt-8 text-xl font-medium text-black">
+            No Stations added Yet
+          </h2>
+          <p className="text-grey-800 mt-4 max-w-144 text-base">
+            To begin listing your outlets and delivering fuel to customers,
+            start by adding your first branch location and assigning it to your
+            verified manager.
+          </p>
+          <Link
+            href="/admin/stations/new"
+            className={`${primaryPillClass} mt-6 w-auto! gap-2 px-5`}
+          >
+            <Plus size={18} aria-hidden="true" />
+            Add your First Station
+          </Link>
+        </div>
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-2xl border border-gray-100 bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-left text-base [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+              <thead>
+                <tr className="text-lg text-black">
+                  <th className="px-5 py-5 font-medium">Stations ID</th>
+                  <th className="px-5 py-5 font-medium">Branch Name</th>
+                  <th className="px-5 py-5 font-medium">Manager</th>
+                  <th className="px-5 py-5 font-medium">Address</th>
+                  <th className="px-5 py-5 font-medium">Compliance Status</th>
+                  <th className="px-5 py-5 font-medium">Status</th>
+                  <th className="px-5 py-5 text-center font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {current.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-grey-800 px-5 py-10 text-center">
+                      No stations match your search or filters.
+                    </td>
+                  </tr>
+                )}
+                {current.rows.map((station) => (
+                  <tr key={station.id} className="odd:bg-[#EEF0FC]">
+                    <td className="text-grey-800 px-5 py-4 whitespace-nowrap">
+                      {station.code}
+                    </td>
+                    <td className="max-w-52 px-5 py-4">
+                      <Link
+                        href={`/admin/stations/${station.id}`}
+                        className="text-primary-500 block truncate hover:underline"
+                        title={station.name}
+                      >
+                        {station.name}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      {station.manager ? (
+                        <span className="text-black">{station.manager.name}</span>
                       ) : (
-                        <button
-                          className="flex w-full items-center rounded px-3 py-2 text-sm text-green-700 hover:bg-green-50"
-                          onClick={() => setReactivateTarget(station)}
-                        >
-                          Reactivate
-                        </button>
+                        <span className="text-yellow-600">Not Assigned</span>
                       )}
-                    </PopoverContent>
-                  </Popover>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    </td>
+                    <td className="px-5 py-4 text-black">
+                      <span className="block">{station.address}</span>
+                      <span className="text-grey-800 block">
+                        {station.city}, {station.state}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <ComplianceBadge station={station} />
+                    </td>
+                    <td className="px-5 py-4">
+                      <StationStatusBadge station={station} />
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-center">
+                        <ActionsMenu
+                          label={`Actions for ${station.name}`}
+                          actions={actionsFor(station)}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            page={current.page}
+            perPage={perPage}
+            total={filtered.length}
+            noun="Stations"
+            onPageChange={setPage}
+            onPerPageChange={(value) => {
+              setPerPage(value);
+              setPage(1);
+            }}
+          />
+        </div>
+      )}
 
-      {/* Dialogs */}
-      {deactivateTarget && (
-        <DeactivateStationDialog
-          station={deactivateTarget}
-          blocked={Boolean(blockedMessage)}
-          blockedMessage={blockedMessage ?? ""}
-          onConfirm={() => handleDeactivate(deactivateTarget)}
-          onClose={() => { setDeactivateTarget(null); setBlockedMessage(null); }}
-        />
-      )}
-      {reactivateTarget && (
-        <ReactivateStationDialog
-          station={reactivateTarget}
-          onConfirm={() => handleReactivate(reactivateTarget)}
-          onClose={() => setReactivateTarget(null)}
-        />
-      )}
+      {dialogs}
     </>
   );
 }
